@@ -1,0 +1,16 @@
+{
+  "id": "community.subtitles.pipocas.tv",
+  "version": "1.0.0",
+  "name": "Pipocas.tv Legendas",
+  "description": "Legendas em Português (PT/BR) do site Pipocas.tv para filmes e séries.",
+  "logo": "https://pipocas.tv/favicon.ico",
+  "background": "https://i.imgur.com/t8wVwcg.png",
+  "resources": ["subtitles"],
+  "types": ["movie", "series"],
+  "idPrefixes": ["tt"],
+  "catalogs": [],
+  "behaviorHints": {
+    "adult": false,
+    "p2p": false
+  }
+}

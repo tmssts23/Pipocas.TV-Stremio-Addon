@@ -1,0 +1,216 @@
+/**
+ * pipocas.js — Scraper para Pipocas.tv
+ */
+
+const axios = require('axios');
+const cheerio = require('cheerio');
+const https = require('https');
+
+const BASE_URL = 'https://pipocas.tv';
+
+// Jar de cookies manual — guarda TODOS os cookies entre pedidos
+let cookieJar = {};
+
+function saveCookies(headers) {
+  if (!headers['set-cookie']) return;
+  headers['set-cookie'].forEach(cookie => {
+    const [pair] = cookie.split(';');
+    const [name, ...valueParts] = pair.split('=');
+    cookieJar[name.trim()] = valueParts.join('=').trim();
+  });
+}
+
+function getCookieHeader() {
+  return Object.entries(cookieJar).map(([k, v]) => `${k}=${v}`).join('; ');
+}
+
+const HEADERS = {
+  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+  'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+  'Accept-Language': 'pt-PT,pt;q=0.9,en;q=0.8',
+  'Referer': 'https://pipocas.tv/',
+};
+
+const client = axios.create({
+  baseURL: BASE_URL,
+  headers: HEADERS,
+  timeout: 20000,
+  maxRedirects: 0,        // NÃO seguir redirects automaticamente — controlamos manualmente
+  validateStatus: (s) => s < 500,  // aceitar 3xx sem lançar erro
+  httpsAgent: new https.Agent({ rejectUnauthorized: false }),
+});
+
+let csrfToken = '';
+let loggedIn = false;
+
+async function login() {
+  const username = process.env.PIPOCAS_USER;
+  const password = process.env.PIPOCAS_PASS;
+
+  if (!username || !password) {
+    console.warn('[Pipocas.tv] ⚠️  Sem credenciais! Define PIPOCAS_USER e PIPOCAS_PASS no .env');
+    return false;
+  }
+
+  try {
+    console.log('[Pipocas.tv] A fazer login...');
+
+    // Passo 1: GET / — obter cookies iniciais e CSRF token
+    const homeRes = await client.get('/', { headers: HEADERS });
+    saveCookies(homeRes.headers);
+    const $home = cheerio.load(homeRes.data);
+    csrfToken = $home('meta[name="csrf-token"]').attr('content') || '';
+    console.log(`[Pipocas.tv] CSRF token: ${csrfToken ? '✅' : '❌'} | Cookies: ${Object.keys(cookieJar).join(', ')}`);
+
+    // Passo 2: GET /login — obter mais cookies da página de login
+    const loginPageRes = await client.get('/login', {
+      headers: { ...HEADERS, 'Cookie': getCookieHeader() },
+    });
+    saveCookies(loginPageRes.headers);
+    // Atualizar CSRF token da página de login (pode ser diferente)
+    const $login = cheerio.load(loginPageRes.data);
+    const loginCsrf = $login('meta[name="csrf-token"]').attr('content')
+                   || $login('input[name="_token"]').attr('value')
+                   || csrfToken;
+    if (loginCsrf) csrfToken = loginCsrf;
+    console.log(`[Pipocas.tv] CSRF (login page): ${csrfToken.substring(0, 20)}...`);
+
+    // Passo 3: POST /login — submeter credenciais
+    const postRes = await client.post(
+      '/login',
+      new URLSearchParams({
+        _token: csrfToken,
+        login: username,
+        senha: password,
+      }).toString(),
+      {
+        headers: {
+          ...HEADERS,
+          'Content-Type': 'application/x-www-form-urlencoded',
+          'Cookie': getCookieHeader(),
+          'X-CSRF-TOKEN': csrfToken,
+          'Origin': BASE_URL,
+          'Referer': `${BASE_URL}/login`,
+        },
+      }
+    );
+
+    saveCookies(postRes.headers);
+    console.log(`[Pipocas.tv] POST login status: ${postRes.status} | Redirect: ${postRes.headers['location'] || 'nenhum'}`);
+    console.log(`[Pipocas.tv] Cookies após login: ${Object.keys(cookieJar).join(', ')}`);
+
+    // Passo 4: Se houve redirect (302), seguir manualmente
+    if (postRes.status === 302 || postRes.status === 301) {
+      const redirectUrl = postRes.headers['location'] || '/';
+      const redirectRes = await client.get(redirectUrl, {
+        headers: { ...HEADERS, 'Cookie': getCookieHeader() },
+      });
+      saveCookies(redirectRes.headers);
+    }
+
+    // Verificar se o login funcionou acedendo a uma página protegida
+    const checkRes = await client.get('/legendas', {
+      headers: { ...HEADERS, 'Cookie': getCookieHeader() },
+    });
+    saveCookies(checkRes.headers);
+
+    const isLoggedIn = checkRes.status === 200 &&
+                       !checkRes.headers['location']?.includes('/login') &&
+                       checkRes.data.includes('logout');
+
+    if (isLoggedIn) {
+      loggedIn = true;
+      console.log('[Pipocas.tv] ✅ Login bem-sucedido!');
+      return true;
+    } else {
+      console.error('[Pipocas.tv] ❌ Login falhou — ainda não autenticado. Verifica username/password no .env');
+      return false;
+    }
+  } catch (err) {
+    console.error('[Pipocas.tv] ❌ Erro no login:', err.message);
+    return false;
+  }
+}
+
+async function searchSubtitles({ type, imdbId, season, episode }) {
+  if (!loggedIn) await login();
+
+  const imdbNumeric = imdbId.replace(/^tt/i, '');
+  const url = `${BASE_URL}/legendas?t=imdb&s=${imdbNumeric}&l=todas`;
+
+  const subtitles = await scrapePage(url, season, episode);
+  console.log(`[Pipocas.tv] Total: ${subtitles.length} legendas para ${imdbId}`);
+  return subtitles;
+}
+
+async function scrapePage(url, season, episode) {
+  const subtitles = [];
+
+  try {
+    console.log(`[Pipocas.tv] A pesquisar: ${url}`);
+
+    const response = await client.get(url, {
+      headers: { ...HEADERS, 'Cookie': getCookieHeader() },
+    });
+
+    saveCookies(response.headers);
+
+    // Se redireccionou para login, tentar fazer login novamente
+    if (response.headers['location']?.includes('/login') || response.data.includes('<title>Login')) {
+      console.warn('[Pipocas.tv] ⚠️  Sessão expirou, a tentar novo login...');
+      loggedIn = false;
+      await login();
+      return scrapePage(url, season, episode);
+    }
+
+    const occurrences = (response.data.match(/\/legendas\/download\//g) || []).length;
+    console.log(`[Pipocas.tv] Links de download encontrados no HTML: ${occurrences}`);
+
+    const $ = cheerio.load(response.data);
+
+    $('a[href*="/legendas/download/"]').each((i, el) => {
+      const $link = $(el);
+      const href = $link.attr('href');
+      const subId = href.match(/\/legendas\/download\/(\d+)/)?.[1];
+      if (!subId) return;
+
+      const $block = $link.closest('.col-md-12').parent();
+
+      const release = $block.find('h3.title .font-normal').first().text().trim()
+                   || $block.find('.font-normal').first().text().trim()
+                   || `Legenda #${subId}`;
+
+      let langLabel = 'PT';
+      $block.find('img[src*="flag-"]').each((_, flag) => {
+        const src = $(flag).attr('src') || '';
+        if (src.includes('flag-brazil')) langLabel = 'BR';
+        else if (src.includes('flag-portugal')) langLabel = 'PT';
+      });
+
+      if (season && episode) {
+        const s = String(season).padStart(2, '0');
+        const e = String(episode).padStart(2, '0');
+        const pattern = new RegExp(`[Ss]${s}[Ee]${e}|${Number(season)}x${e}`, 'i');
+        if (!pattern.test(release)) return;
+      }
+
+      console.log(`  → [${langLabel}] ${release} (id=${subId})`);
+
+      subtitles.push({
+        id: `pipocas-${subId}`,
+        url: `${BASE_URL}/legendas/download/${subId}`,
+        lang: 'por',
+        name: `🍿 [${langLabel}] ${release.substring(0, 60)}`,
+      });
+    });
+
+  } catch (err) {
+    console.error(`[Pipocas.tv] Erro:`, err.message);
+  }
+
+  return subtitles;
+}
+
+login().catch(() => {});
+
+module.exports = { searchSubtitles, login };
