@@ -5,6 +5,7 @@
 const axios = require('axios');
 const cheerio = require('cheerio');
 const https = require('https');
+const AdmZip = require('adm-zip');
 
 const BASE_URL = 'https://pipocas.tv';
 
@@ -275,11 +276,19 @@ async function downloadSubtitleById(id, res, credentials) {
   const url = `${BASE_URL}/legendas/download/${id}`;
   try {
     const response = await client.get(url, {
-      responseType: 'stream',
+      responseType: 'arraybuffer',
       headers: { ...HEADERS, 'Cookie': getCookieHeader(session) },
     });
+    let body = Buffer.from(response.data);
+    if (body.length >= 2 && body[0] === 0x50 && body[1] === 0x4B) {
+      const zip = new AdmZip(body);
+      const entries = zip.getEntries();
+      const srtEntry = entries.find((e) => e.entryName.toLowerCase().endsWith('.srt'));
+      const entry = srtEntry || entries[0];
+      if (entry) body = entry.getData();
+    }
     res.setHeader('Content-Type', 'application/x-subrip; charset=utf-8');
-    response.data.pipe(res);
+    res.end(body);
   } catch (err) {
     console.error(`[Pipocas.tv] Erro ao descarregar legenda ${id}:`, err.message);
     res.statusCode = 502;
