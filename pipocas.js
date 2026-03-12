@@ -189,17 +189,25 @@ async function scrapePage(url, season, episode, credentials) {
 
     saveCookies(response.headers, session);
 
-    if (response.headers['location']?.includes('/login') || response.data.includes('<title>Login')) {
+    const html = typeof response.data === 'string' ? response.data : (response.data && response.data.toString ? response.data.toString() : '');
+    const isLoginPage = response.headers['location']?.includes('/login') || html.includes('<title>Login');
+    const occurrences = (html.match(/\/legendas\/download\//g) || []).length;
+
+    if (occurrences > 0) {
+      console.log(`[Pipocas.tv] Links de download encontrados no HTML: ${occurrences}`);
+    } else if (isLoginPage) {
       session.loggedIn = false;
       const ok = await login(credentials);
-      if (!ok) return subtitles;
+      if (!ok) {
+        console.warn('[Pipocas.tv] ⚠️  Página exige login e as credenciais falharam. Tenta configurar no Stremio.');
+        return subtitles;
+      }
       return scrapePage(url, season, episode, credentials);
+    } else {
+      console.log(`[Pipocas.tv] Nenhum link de download na página (${occurrences}).`);
     }
 
-    const occurrences = (response.data.match(/\/legendas\/download\//g) || []).length;
-    console.log(`[Pipocas.tv] Links de download encontrados no HTML: ${occurrences}`);
-
-    const $ = cheerio.load(response.data);
+    const $ = cheerio.load(html);
 
     $('a[href*="/legendas/download/"]').each((i, el) => {
       const $link = $(el);
