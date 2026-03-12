@@ -196,9 +196,14 @@ async function scrapePage(url, season, episode) {
 
       console.log(`  → [${langLabel}] ${release} (id=${subId})`);
 
+      const addonBase = process.env.BASE_URL ? process.env.BASE_URL.replace(/\/$/, '') : '';
+      const subtitleUrl = addonBase
+        ? `${addonBase}/pipocas/${subId}.srt`
+        : `${BASE_URL}/legendas/download/${subId}`;
+
       subtitles.push({
         id: `pipocas-${subId}`,
-        url: `${BASE_URL}/legendas/download/${subId}`,
+        url: subtitleUrl,
         lang: 'por',
         name: `🍿 [${langLabel}] ${release.substring(0, 60)}`,
       });
@@ -211,6 +216,23 @@ async function scrapePage(url, season, episode) {
   return subtitles;
 }
 
+async function downloadSubtitleById(id, res) {
+  if (!loggedIn) await login();
+  const url = `${BASE_URL}/legendas/download/${id}`;
+  try {
+    const response = await client.get(url, {
+      responseType: 'stream',
+      headers: { ...HEADERS, 'Cookie': getCookieHeader() },
+    });
+    res.setHeader('Content-Type', 'application/x-subrip; charset=utf-8');
+    response.data.pipe(res);
+  } catch (err) {
+    console.error(`[Pipocas.tv] Erro ao descarregar legenda ${id}:`, err.message);
+    res.statusCode = 502;
+    res.end('Erro ao obter legenda');
+  }
+}
+
 login().catch(() => {});
 
-module.exports = { searchSubtitles, login };
+module.exports = { searchSubtitles, login, downloadSubtitleById };

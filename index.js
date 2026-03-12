@@ -2,7 +2,7 @@ require('dotenv').config();
 
 const { addonBuilder, getRouter } = require('stremio-addon-sdk');
 const express = require('express');
-const { searchSubtitles } = require('./pipocas');
+const { searchSubtitles, downloadSubtitleById } = require('./pipocas');
 const manifest = require('./manifest.json');
 
 const builder = new addonBuilder(manifest);
@@ -35,17 +35,22 @@ app.use((req, res, next) => {
 });
 
 // Montar o router do addon SDK
-app.use('/', getRouter(builder.getInterface()));
+const addonInterface = builder.getInterface();
+app.use('/', getRouter(addonInterface));
 
 const PORT = process.env.PORT || 7000;
 
-app.listen(PORT, () => {
-  console.log('\n🍿 Pipocas.tv Stremio Addon a correr!');
-  console.log('─────────────────────────────────────────');
-  console.log(`📡 URL do Addon: http://127.0.0.1:${PORT}/manifest.json`);
-  console.log('─────────────────────────────────────────');
-  console.log('Para instalar no Stremio, vai a:');
-  console.log('  Definições → Addons → "Add addon"');
-  console.log(`  Cola: http://127.0.0.1:${PORT}/manifest.json`);
-  console.log('─────────────────────────────────────────\n');
-});
+if (require.main === module) {
+  app.listen(PORT, () => {
+    console.log('\n🍿 Pipocas.tv Stremio Addon a correr!');
+    console.log('─────────────────────────────────────────');
+    console.log(`📡 URL do Addon: http://127.0.0.1:${PORT}/manifest.json`);
+    console.log('─────────────────────────────────────────');
+    console.log('Para instalar no Stremio, vai a:');
+    console.log('  Definições → Addons → "Add addon"');
+    console.log(`  Cola: http://127.0.0.1:${PORT}/manifest.json`);
+    console.log('─────────────────────────────────────────\n');
+  });
+}
+
+module.exports = { addonInterface, downloadSubtitleById };
