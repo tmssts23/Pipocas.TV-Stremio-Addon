@@ -220,7 +220,9 @@ async function scrapePage(url, season, episode, credentials) {
 
       const release = $block.find('h3.title .font-normal').first().text().trim()
                    || $block.find('.font-normal').first().text().trim()
+                   || $block.find('h3.title').first().text().trim()
                    || `Legenda #${subId}`;
+      const blockText = (season && episode) ? $block.text() : '';
 
       let langLabel = 'PT';
       $block.find('img[src*="flag-"]').each((_, flag) => {
@@ -230,10 +232,21 @@ async function scrapePage(url, season, episode, credentials) {
       });
 
       if (season && episode) {
-        const s = String(season).padStart(2, '0');
-        const e = String(episode).padStart(2, '0');
-        const pattern = new RegExp(`[Ss]${s}[Ee]${e}|${Number(season)}x${e}`, 'i');
-        if (!pattern.test(release)) return;
+        const sNum = Number(season);
+        const eNum = Number(episode);
+        const s2 = String(season).padStart(2, '0');
+        const e2 = String(episode).padStart(2, '0');
+        const re = new RegExp(
+          `[Ss]\\s*${sNum}\\s*[Ee]\\s*${eNum}\\b|` +
+          `[Ss]\\s*${s2}\\s*[Ee]\\s*${e2}\\b|` +
+          `[Ss]\\s*${s2}\\s*[Ee]\\s*${eNum}\\b|` +
+          `\\b${sNum}\\s*[xX]\\s*${eNum}\\b|` +
+          `\\b${sNum}\\s*[xX]\\s*${e2}\\b|` +
+          `\\b${sNum}\\s*[.Ee]\\s*${eNum}\\b`,
+          'i'
+        );
+        const textToMatch = (release + ' ' + blockText).trim();
+        if (!re.test(textToMatch)) return;
       }
 
       console.log(`  → [${langLabel}] ${release} (id=${subId})`);

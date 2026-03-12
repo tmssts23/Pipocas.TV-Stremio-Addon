@@ -15,7 +15,7 @@ builder.defineSubtitlesHandler(async ({ type, id, config }) => {
 
   const [imdbId, season, episode] = id.split(':');
   const credentials = config && (config.username || config.password) ? config : null;
-  const baseUrl = process.env.BASE_URL ? process.env.BASE_URL.replace(/\/$/, '') : '';
+  const baseUrl = (process.env.BASE_URL || (process.env.RAILWAY_PUBLIC_DOMAIN && `https://${process.env.RAILWAY_PUBLIC_DOMAIN}`) || '').replace(/\/$/, '');
 
   try {
     const subtitles = await searchSubtitles({
@@ -72,6 +72,24 @@ app.get('/', (_, res) => {
 });
 app.get('/configure', (_, res) => {
   res.setHeader('Content-Type', 'text/html').end(landingHTML);
+});
+
+// Proxy de download de legendas (Stremio pede este URL; nós descarregamos no Pipocas com cookies)
+app.get('/pipocas/:id', (req, res) => {
+  const idStr = (req.params.id || '').replace(/\.srt$/i, '');
+  const id = parseInt(idStr, 10);
+  if (!id || id <= 0) {
+    res.status(404).end('Not found');
+    return;
+  }
+  let credentials = null;
+  const c = req.query.c;
+  if (c) {
+    try {
+      credentials = JSON.parse(decodeURIComponent(c));
+    } catch (_) {}
+  }
+  downloadSubtitleById(id, res, credentials);
 });
 
 // Router do addon SDK (manifest, subtitles, etc.)
