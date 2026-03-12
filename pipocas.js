@@ -160,9 +160,12 @@ async function searchSubtitles({ type, imdbId, season, episode, credentials, bas
     let subtitleUrl;
     if (baseUrlForProxy && baseUrlForProxy.replace) {
       const base = baseUrlForProxy.replace(/\/$/, '');
-      subtitleUrl = configForUrl
-        ? `${base}/pipocas/${subId}.srt?c=${encodeURIComponent(JSON.stringify(configForUrl))}`
-        : `${base}/pipocas/${subId}.srt`;
+      if (configForUrl) {
+        const configEnc = Buffer.from(JSON.stringify(configForUrl), 'utf8').toString('base64url');
+        subtitleUrl = `${base}/pipocas/${configEnc}/${subId}.srt`;
+      } else {
+        subtitleUrl = `${base}/pipocas/${subId}.srt`;
+      }
     } else {
       subtitleUrl = `${BASE_URL}/legendas/download/${subId}`;
     }
