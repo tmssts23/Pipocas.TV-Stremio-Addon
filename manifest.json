@@ -27,5 +27,9 @@
     "adult": false,
     "p2p": false,
     "configurable": true
+  },
+  "stremioAddonsConfig": {
+    "issuer": "https://stremio-addons.net",
+    "signature": "eyJhbGciOiJkaXIiLCJlbmMiOiJBMTI4Q0JDLUhTMjU2In0..CsnNL6qRR7qZqW8H0rdc5A.Nyq0KBxDVvcyvrRH-1umZEpDojlktx-GlMCglvKz3nPsn1YzeGcxdWbrgUihNdnX2-EokKBKcG9dTkTt_C8Qmg6DGyQgbiw5VhDa1cnSw9rm7tGqn3kBNJn2U2cQbNse.sR3R1-3n3zXev7qjXKG1Ew"
   }
 }
