@@ -8,20 +8,34 @@ const https = require('https');
 
 const BASE_URL = 'https://pipocas.tv';
 
-// Jar de cookies manual — guarda TODOS os cookies entre pedidos
-let cookieJar = {};
+// Sessões por credenciais (username ou 'env' para variáveis de ambiente)
+const sessions = {};
 
-function saveCookies(headers) {
+function getSessionKey(credentials) {
+  if (credentials && credentials.username) return credentials.username;
+  return '_env';
+}
+
+function getSession(credentials) {
+  const key = getSessionKey(credentials);
+  if (!sessions[key]) {
+    sessions[key] = { cookieJar: {}, csrfToken: '', loggedIn: false };
+  }
+  return sessions[key];
+}
+
+function saveCookies(headers, session) {
   if (!headers['set-cookie']) return;
+  const jar = session.cookieJar;
   headers['set-cookie'].forEach(cookie => {
     const [pair] = cookie.split(';');
     const [name, ...valueParts] = pair.split('=');
-    cookieJar[name.trim()] = valueParts.join('=').trim();
+    jar[name.trim()] = valueParts.join('=').trim();
   });
 }
 
-function getCookieHeader() {
-  return Object.entries(cookieJar).map(([k, v]) => `${k}=${v}`).join('; ');
+function getCookieHeader(session) {
+  return Object.entries(session.cookieJar).map(([k, v]) => `${k}=${v}`).join('; ');
 }
 
 const HEADERS = {
@@ -40,46 +54,42 @@ const client = axios.create({
   httpsAgent: new https.Agent({ rejectUnauthorized: false }),
 });
 
-let csrfToken = '';
-let loggedIn = false;
-
-async function login() {
-  const username = process.env.PIPOCAS_USER;
-  const password = process.env.PIPOCAS_PASS;
+async function login(credentials) {
+  const creds = credentials || {};
+  const username = creds.username || process.env.PIPOCAS_USER;
+  const password = creds.password || process.env.PIPOCAS_PASS;
+  const session = getSession(credentials);
 
   if (!username || !password) {
-    console.warn('[Pipocas.tv] ⚠️  Sem credenciais! Define PIPOCAS_USER e PIPOCAS_PASS no .env');
+    if (!credentials) {
+      console.warn('[Pipocas.tv] ⚠️  Sem credenciais! Configura no Stremio ou define PIPOCAS_USER e PIPOCAS_PASS no .env');
+    }
     return false;
   }
 
   try {
     console.log('[Pipocas.tv] A fazer login...');
 
-    // Passo 1: GET / — obter cookies iniciais e CSRF token
     const homeRes = await client.get('/', { headers: HEADERS });
-    saveCookies(homeRes.headers);
+    saveCookies(homeRes.headers, session);
     const $home = cheerio.load(homeRes.data);
-    csrfToken = $home('meta[name="csrf-token"]').attr('content') || '';
-    console.log(`[Pipocas.tv] CSRF token: ${csrfToken ? '✅' : '❌'} | Cookies: ${Object.keys(cookieJar).join(', ')}`);
+    session.csrfToken = $home('meta[name="csrf-token"]').attr('content') || '';
+    console.log(`[Pipocas.tv] CSRF token: ${session.csrfToken ? '✅' : '❌'} | Cookies: ${Object.keys(session.cookieJar).join(', ')}`);
 
-    // Passo 2: GET /login — obter mais cookies da página de login
     const loginPageRes = await client.get('/login', {
-      headers: { ...HEADERS, 'Cookie': getCookieHeader() },
+      headers: { ...HEADERS, 'Cookie': getCookieHeader(session) },
     });
-    saveCookies(loginPageRes.headers);
-    // Atualizar CSRF token da página de login (pode ser diferente)
+    saveCookies(loginPageRes.headers, session);
     const $login = cheerio.load(loginPageRes.data);
     const loginCsrf = $login('meta[name="csrf-token"]').attr('content')
                    || $login('input[name="_token"]').attr('value')
-                   || csrfToken;
-    if (loginCsrf) csrfToken = loginCsrf;
-    console.log(`[Pipocas.tv] CSRF (login page): ${csrfToken.substring(0, 20)}...`);
+                   || session.csrfToken;
+    if (loginCsrf) session.csrfToken = loginCsrf;
 
-    // Passo 3: POST /login — submeter credenciais
     const postRes = await client.post(
       '/login',
       new URLSearchParams({
-        _token: csrfToken,
+        _token: session.csrfToken,
         login: username,
         senha: password,
       }).toString(),
@@ -87,43 +97,39 @@ async function login() {
         headers: {
           ...HEADERS,
           'Content-Type': 'application/x-www-form-urlencoded',
-          'Cookie': getCookieHeader(),
-          'X-CSRF-TOKEN': csrfToken,
+          'Cookie': getCookieHeader(session),
+          'X-CSRF-TOKEN': session.csrfToken,
           'Origin': BASE_URL,
           'Referer': `${BASE_URL}/login`,
         },
       }
     );
 
-    saveCookies(postRes.headers);
-    console.log(`[Pipocas.tv] POST login status: ${postRes.status} | Redirect: ${postRes.headers['location'] || 'nenhum'}`);
-    console.log(`[Pipocas.tv] Cookies após login: ${Object.keys(cookieJar).join(', ')}`);
+    saveCookies(postRes.headers, session);
 
-    // Passo 4: Se houve redirect (302), seguir manualmente
     if (postRes.status === 302 || postRes.status === 301) {
       const redirectUrl = postRes.headers['location'] || '/';
       const redirectRes = await client.get(redirectUrl, {
-        headers: { ...HEADERS, 'Cookie': getCookieHeader() },
+        headers: { ...HEADERS, 'Cookie': getCookieHeader(session) },
       });
-      saveCookies(redirectRes.headers);
+      saveCookies(redirectRes.headers, session);
     }
 
-    // Verificar se o login funcionou acedendo a uma página protegida
     const checkRes = await client.get('/legendas', {
-      headers: { ...HEADERS, 'Cookie': getCookieHeader() },
+      headers: { ...HEADERS, 'Cookie': getCookieHeader(session) },
     });
-    saveCookies(checkRes.headers);
+    saveCookies(checkRes.headers, session);
 
     const isLoggedIn = checkRes.status === 200 &&
                        !checkRes.headers['location']?.includes('/login') &&
                        checkRes.data.includes('logout');
 
     if (isLoggedIn) {
-      loggedIn = true;
+      session.loggedIn = true;
       console.log('[Pipocas.tv] ✅ Login bem-sucedido!');
       return true;
     } else {
-      console.error('[Pipocas.tv] ❌ Login falhou — ainda não autenticado. Verifica username/password no .env');
+      console.error('[Pipocas.tv] ❌ Login falhou. Verifica utilizador/palavra-passe.');
       return false;
     }
   } catch (err) {
@@ -132,35 +138,59 @@ async function login() {
   }
 }
 
-async function searchSubtitles({ type, imdbId, season, episode }) {
-  if (!loggedIn) await login();
+function filterByIdioma(items, idioma) {
+  if (idioma === 'Português BR') return items.filter((item) => item.langLabel === 'BR');
+  return items.filter((item) => item.langLabel === 'PT');
+}
+
+async function searchSubtitles({ type, imdbId, season, episode, credentials, baseUrlForProxy, configForUrl, idioma }) {
+  const session = getSession(credentials);
+  if (!session.loggedIn) await login(credentials);
 
   const imdbNumeric = imdbId.replace(/^tt/i, '');
   const url = `${BASE_URL}/legendas?t=imdb&s=${imdbNumeric}&l=todas`;
 
-  const subtitles = await scrapePage(url, season, episode);
-  console.log(`[Pipocas.tv] Total: ${subtitles.length} legendas para ${imdbId}`);
+  const items = await scrapePage(url, season, episode, credentials);
+  const filtered = filterByIdioma(items, idioma || 'Português PT');
+  const subtitles = filtered.map(({ subId, name, lang, langLabel }) => {
+    let subtitleUrl;
+    if (baseUrlForProxy && baseUrlForProxy.replace) {
+      const base = baseUrlForProxy.replace(/\/$/, '');
+      subtitleUrl = configForUrl
+        ? `${base}/pipocas/${subId}.srt?c=${encodeURIComponent(JSON.stringify(configForUrl))}`
+        : `${base}/pipocas/${subId}.srt`;
+    } else {
+      subtitleUrl = `${BASE_URL}/legendas/download/${subId}`;
+    }
+    return {
+      id: `pipocas-${subId}`,
+      url: subtitleUrl,
+      lang: lang,
+      name,
+    };
+  });
+  console.log(`[Pipocas.tv] Total: ${subtitles.length} legendas para ${imdbId} (idioma: ${idioma || 'Português PT'})`);
   return subtitles;
 }
 
-async function scrapePage(url, season, episode) {
+async function scrapePage(url, season, episode, credentials) {
   const subtitles = [];
+  const session = getSession(credentials);
 
   try {
     console.log(`[Pipocas.tv] A pesquisar: ${url}`);
 
     const response = await client.get(url, {
-      headers: { ...HEADERS, 'Cookie': getCookieHeader() },
+      headers: { ...HEADERS, 'Cookie': getCookieHeader(session) },
     });
 
-    saveCookies(response.headers);
+    saveCookies(response.headers, session);
 
-    // Se redireccionou para login, tentar fazer login novamente
     if (response.headers['location']?.includes('/login') || response.data.includes('<title>Login')) {
       console.warn('[Pipocas.tv] ⚠️  Sessão expirou, a tentar novo login...');
-      loggedIn = false;
-      await login();
-      return scrapePage(url, season, episode);
+      session.loggedIn = false;
+      await login(credentials);
+      return scrapePage(url, season, episode, credentials);
     }
 
     const occurrences = (response.data.match(/\/legendas\/download\//g) || []).length;
@@ -196,15 +226,10 @@ async function scrapePage(url, season, episode) {
 
       console.log(`  → [${langLabel}] ${release} (id=${subId})`);
 
-      const addonBase = process.env.BASE_URL ? process.env.BASE_URL.replace(/\/$/, '') : '';
-      const subtitleUrl = addonBase
-        ? `${addonBase}/pipocas/${subId}.srt`
-        : `${BASE_URL}/legendas/download/${subId}`;
-
       subtitles.push({
-        id: `pipocas-${subId}`,
-        url: subtitleUrl,
+        subId,
         lang: 'por',
+        langLabel,
         name: `🍿 [${langLabel}] ${release.substring(0, 60)}`,
       });
     });
@@ -216,13 +241,14 @@ async function scrapePage(url, season, episode) {
   return subtitles;
 }
 
-async function downloadSubtitleById(id, res) {
-  if (!loggedIn) await login();
+async function downloadSubtitleById(id, res, credentials) {
+  const session = getSession(credentials);
+  if (!session.loggedIn) await login(credentials);
   const url = `${BASE_URL}/legendas/download/${id}`;
   try {
     const response = await client.get(url, {
       responseType: 'stream',
-      headers: { ...HEADERS, 'Cookie': getCookieHeader() },
+      headers: { ...HEADERS, 'Cookie': getCookieHeader(session) },
     });
     res.setHeader('Content-Type', 'application/x-subrip; charset=utf-8');
     response.data.pipe(res);

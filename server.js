@@ -29,12 +29,38 @@ function proxyHandler(req, res) {
     return res.end('Not found');
   }
   const id = parseInt(match[1], 10);
-  downloadSubtitleById(id, res);
+  let credentials = null;
+  const q = (req.url || '').indexOf('?');
+  if (q !== -1) {
+    const params = new URLSearchParams(req.url.slice(q));
+    const c = params.get('c');
+    if (c) {
+      try {
+        credentials = JSON.parse(decodeURIComponent(c));
+      } catch (_) {}
+    }
+  }
+  downloadSubtitleById(id, res, credentials);
 }
 
 const app = express();
 app.use((req, res, next) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
+  next();
+});
+// Cache curto no manifest para o Stremio poder atualizar o addon quando há nova versão
+app.use((req, res, next) => {
+  const origEnd = res.end;
+  res.end = function (chunk, ...args) {
+    const ct = res.getHeader('Content-Type');
+    if (ct && String(ct).includes('application/json') && chunk) {
+      const body = typeof chunk === 'string' ? chunk : (chunk && chunk.toString ? chunk.toString() : '');
+      if (body.length < 3000 && body.includes('"id"') && body.includes('"version"')) {
+        res.setHeader('Cache-Control', 'max-age=300, stale-while-revalidate=60, public');
+      }
+    }
+    return origEnd.apply(this, [chunk, ...args]);
+  };
   next();
 });
 app.get(/^\/pipocas\/(\d+)(\.srt)?\/?$/i, (req, res) => proxyHandler(req, res));

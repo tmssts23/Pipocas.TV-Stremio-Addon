@@ -1,6 +1,6 @@
 {
   "id": "community.subtitles.pipocas.tv",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "name": "Pipocas.tv Legendas",
   "description": "Legendas em Português (PT/BR) do site Pipocas.tv para filmes e séries.",
   "logo": "https://pipocas.tv/favicon.ico",
@@ -9,8 +9,30 @@
   "types": ["movie", "series"],
   "idPrefixes": ["tt"],
   "catalogs": [],
+  "config": [
+    {
+      "key": "username",
+      "type": "text",
+      "title": "Utilizador Pipocas.tv",
+      "required": true
+    },
+    {
+      "key": "password",
+      "type": "password",
+      "title": "Palavra-passe Pipocas.tv",
+      "required": true
+    },
+    {
+      "key": "idioma",
+      "type": "select",
+      "title": "Idioma",
+      "options": ["Português PT", "Português BR"],
+      "default": "Português PT"
+    }
+  ],
   "behaviorHints": {
     "adult": false,
-    "p2p": false
+    "p2p": false,
+    "configurable": true
   }
 }

@@ -8,14 +8,25 @@ const manifest = require('./manifest.json');
 const builder = new addonBuilder(manifest);
 
 // Subtitle handler — chamado quando o Stremio pede legendas para um filme/série
-builder.defineSubtitlesHandler(async ({ type, id }) => {
+// config = { username, password } quando o utilizador configurou o addon no Stremio
+builder.defineSubtitlesHandler(async ({ type, id, config }) => {
   console.log(`[Pipocas.tv] Subtitles requested → type=${type} id=${id}`);
 
-  // O Stremio passa "tt1234567" para filmes, "tt1234567:1:2" para séries
   const [imdbId, season, episode] = id.split(':');
+  const credentials = config && (config.username || config.password) ? config : null;
+  const baseUrl = process.env.BASE_URL ? process.env.BASE_URL.replace(/\/$/, '') : '';
 
   try {
-    const subtitles = await searchSubtitles({ type, imdbId, season, episode });
+    const subtitles = await searchSubtitles({
+      type,
+      imdbId,
+      season,
+      episode,
+      credentials,
+      baseUrlForProxy: baseUrl || null,
+      configForUrl: credentials || null,
+      idioma: config && config.idioma ? config.idioma : 'Português PT',
+    });
     console.log(`[Pipocas.tv] Encontradas ${subtitles.length} legendas`);
     return { subtitles };
   } catch (err) {
@@ -31,6 +42,22 @@ const app = express();
 app.use((req, res, next) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Headers', '*');
+  next();
+});
+
+// Cache curto no manifest para o Stremio atualizar o addon quando há nova versão
+app.use((req, res, next) => {
+  const origEnd = res.end;
+  res.end = function (chunk, ...args) {
+    const ct = res.getHeader('Content-Type');
+    if (ct && String(ct).includes('application/json') && chunk) {
+      const body = typeof chunk === 'string' ? chunk : (chunk && chunk.toString ? chunk.toString() : '');
+      if (body.length < 3000 && body.includes('"id"') && body.includes('"version"')) {
+        res.setHeader('Cache-Control', 'max-age=300, stale-while-revalidate=60, public');
+      }
+    }
+    return origEnd.apply(this, [chunk, ...args]);
+  };
   next();
 });
 
