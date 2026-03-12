@@ -21,13 +21,6 @@
       "type": "password",
       "title": "Palavra-passe Pipocas.tv",
       "required": true
-    },
-    {
-      "key": "idioma",
-      "type": "select",
-      "title": "Idioma",
-      "options": ["Português PT", "Português BR"],
-      "default": "Português PT"
     }
   ],
   "behaviorHints": {

@@ -147,12 +147,7 @@ async function login(credentials) {
   }
 }
 
-function filterByIdioma(items, idioma) {
-  if (idioma === 'Português BR') return items.filter((item) => item.langLabel === 'BR');
-  return items.filter((item) => item.langLabel === 'PT');
-}
-
-async function searchSubtitles({ type, imdbId, season, episode, credentials, baseUrlForProxy, configForUrl, idioma }) {
+async function searchSubtitles({ type, imdbId, season, episode, credentials, baseUrlForProxy, configForUrl }) {
   const session = getSession(credentials);
   if (!session.loggedIn) await login(credentials);
 
@@ -160,8 +155,7 @@ async function searchSubtitles({ type, imdbId, season, episode, credentials, bas
   const url = `${BASE_URL}/legendas?t=imdb&s=${imdbNumeric}&l=todas`;
 
   const items = await scrapePage(url, season, episode, credentials);
-  const filtered = filterByIdioma(items, idioma || 'Português PT');
-  const subtitles = filtered.map(({ subId, name, lang, langLabel }) => {
+  const subtitles = items.map(({ subId, name, lang, langLabel }) => {
     let subtitleUrl;
     if (baseUrlForProxy && baseUrlForProxy.replace) {
       const base = baseUrlForProxy.replace(/\/$/, '');
@@ -178,7 +172,7 @@ async function searchSubtitles({ type, imdbId, season, episode, credentials, bas
       name,
     };
   });
-  console.log(`[Pipocas.tv] Total: ${subtitles.length} legendas para ${imdbId} (idioma: ${idioma || 'Português PT'})`);
+  console.log(`[Pipocas.tv] Total: ${subtitles.length} legendas para ${imdbId} (PT+BR)`);
   return subtitles;
 }
 

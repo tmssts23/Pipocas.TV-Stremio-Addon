@@ -26,7 +26,6 @@ builder.defineSubtitlesHandler(async ({ type, id, config }) => {
       credentials,
       baseUrlForProxy: baseUrl || null,
       configForUrl: credentials || null,
-      idioma: config && config.idioma ? config.idioma : 'Português PT',
     });
     console.log(`[Pipocas.tv] Encontradas ${subtitles.length} legendas`);
     return { subtitles };
