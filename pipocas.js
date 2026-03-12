@@ -6,6 +6,7 @@ const axios = require('axios');
 const cheerio = require('cheerio');
 const https = require('https');
 const AdmZip = require('adm-zip');
+const unrar = require('node-unrar-js');
 
 const BASE_URL = 'https://pipocas.tv';
 
@@ -280,12 +281,27 @@ async function downloadSubtitleById(id, res, credentials) {
       headers: { ...HEADERS, 'Cookie': getCookieHeader(session) },
     });
     let body = Buffer.from(response.data);
+    // ZIP: PK
     if (body.length >= 2 && body[0] === 0x50 && body[1] === 0x4B) {
       const zip = new AdmZip(body);
       const entries = zip.getEntries();
       const srtEntry = entries.find((e) => e.entryName.toLowerCase().endsWith('.srt'));
       const entry = srtEntry || entries[0];
       if (entry) body = entry.getData();
+    }
+    // RAR: Rar!\x1A\x07
+    else if (body.length >= 7 && body[0] === 0x52 && body[1] === 0x61 && body[2] === 0x72 && body[3] === 0x21 && body[4] === 0x1A && body[5] === 0x07) {
+      const extractor = await unrar.createExtractorFromData({ data: body.buffer.slice(body.byteOffset, body.byteOffset + body.byteLength) });
+      const list = extractor.getFileList();
+      const fileHeaders = [...list.fileHeaders];
+      const srtHeader = fileHeaders.find((h) => !h.flags.directory && h.name.toLowerCase().endsWith('.srt'));
+      const nameToExtract = (srtHeader || fileHeaders.find((h) => !h.flags.directory))?.name;
+      if (nameToExtract) {
+        const extracted = extractor.extract({ files: [nameToExtract] });
+        const files = [...extracted.files];
+        const first = files.find((f) => f.extraction);
+        if (first && first.extraction) body = Buffer.from(first.extraction);
+      }
     }
     res.setHeader('Content-Type', 'application/x-subrip; charset=utf-8');
     res.end(body);
