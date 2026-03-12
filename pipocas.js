@@ -74,7 +74,6 @@ async function login(credentials) {
     saveCookies(homeRes.headers, session);
     const $home = cheerio.load(homeRes.data);
     session.csrfToken = $home('meta[name="csrf-token"]').attr('content') || '';
-    console.log(`[Pipocas.tv] CSRF token: ${session.csrfToken ? '✅' : '❌'} | Cookies: ${Object.keys(session.cookieJar).join(', ')}`);
 
     const loginPageRes = await client.get('/login', {
       headers: { ...HEADERS, 'Cookie': getCookieHeader(session) },
@@ -84,7 +83,17 @@ async function login(credentials) {
     const loginCsrf = $login('meta[name="csrf-token"]').attr('content')
                    || $login('input[name="_token"]').attr('value')
                    || session.csrfToken;
-    if (loginCsrf) session.csrfToken = loginCsrf;
+
+    if (loginCsrf) {
+      session.csrfToken = loginCsrf;
+    } else if (session.cookieJar['XSRF-TOKEN']) {
+      session.csrfToken = session.cookieJar['XSRF-TOKEN'];
+    }
+
+    if (!session.csrfToken) {
+      console.warn('[Pipocas.tv] ⚠️  CSRF não encontrado (meta, _token ou cookie XSRF-TOKEN).');
+      return false;
+    }
 
     const postRes = await client.post(
       '/login',
@@ -187,9 +196,9 @@ async function scrapePage(url, season, episode, credentials) {
     saveCookies(response.headers, session);
 
     if (response.headers['location']?.includes('/login') || response.data.includes('<title>Login')) {
-      console.warn('[Pipocas.tv] ⚠️  Sessão expirou, a tentar novo login...');
       session.loggedIn = false;
-      await login(credentials);
+      const ok = await login(credentials);
+      if (!ok) return subtitles;
       return scrapePage(url, season, episode, credentials);
     }
 

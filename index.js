@@ -1,6 +1,7 @@
 require('dotenv').config();
 
 const { addonBuilder, getRouter } = require('stremio-addon-sdk');
+const landingTemplate = require('stremio-addon-sdk/src/landingTemplate');
 const express = require('express');
 const { searchSubtitles, downloadSubtitleById } = require('./pipocas');
 const manifest = require('./manifest.json');
@@ -61,8 +62,20 @@ app.use((req, res, next) => {
   next();
 });
 
-// Montar o router do addon SDK
 const addonInterface = builder.getInterface();
+const hasConfig = !!(addonInterface.manifest.config || []).length;
+const landingHTML = landingTemplate(addonInterface.manifest);
+
+// Páginas de configuração (antes do router do addon)
+app.get('/', (_, res) => {
+  if (hasConfig) res.redirect(302, '/configure');
+  else res.setHeader('Content-Type', 'text/html').end(landingHTML);
+});
+app.get('/configure', (_, res) => {
+  res.setHeader('Content-Type', 'text/html').end(landingHTML);
+});
+
+// Router do addon SDK (manifest, subtitles, etc.)
 app.use('/', getRouter(addonInterface));
 
 const PORT = process.env.PORT || 7000;
