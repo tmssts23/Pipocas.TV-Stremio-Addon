@@ -99,8 +99,9 @@ async function login(credentials) {
       '/login',
       new URLSearchParams({
         _token: session.csrfToken,
-        login: username,
-        senha: password,
+        username,
+        password,
+        remember: '1',
       }).toString(),
       {
         headers: {
