@@ -63,17 +63,18 @@ app.use((req, res, next) => {
   };
   next();
 });
-app.get(/^\/pipocas\/(\d+)(\.srt)?\/?$/i, (req, res) => proxyHandler(req, res));
-app.use(getRouter(addonInterface));
 const hasConfig = !!(addonInterface.manifest.config || []).length;
 const landingHTML = landingTemplate(addonInterface.manifest);
+// Rotas de páginas primeiro, para não serem capturadas pelo router do addon
 app.get('/', (_, res) => {
-  if (hasConfig) res.redirect('/configure');
+  if (hasConfig) res.redirect(302, '/configure');
   else res.setHeader('content-type', 'text/html').end(landingHTML);
 });
-if (hasConfig) {
-  app.get('/configure', (_, res) => res.setHeader('content-type', 'text/html').end(landingHTML));
-}
+app.get('/configure', (_, res) => {
+  res.setHeader('content-type', 'text/html').end(landingHTML);
+});
+app.get(/^\/pipocas\/(\d+)(\.srt)?\/?$/i, (req, res) => proxyHandler(req, res));
+app.use(getRouter(addonInterface));
 
 app.listen(ADDON_PORT, '0.0.0.0', () => {
   const localIP = getLocalIP();
