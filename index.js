@@ -8,6 +8,14 @@ const manifest = require('./manifest.json');
 
 const builder = new addonBuilder(manifest);
 
+// Base URL do addon (para links de legendas). Inferido do Host do pedido quando não definido em env.
+let inferredBaseUrl = '';
+
+function getBaseUrl() {
+  const fromEnv = (process.env.BASE_URL || (process.env.RAILWAY_PUBLIC_DOMAIN && `https://${process.env.RAILWAY_PUBLIC_DOMAIN}`) || inferredBaseUrl || '').replace(/\/$/, '');
+  return fromEnv;
+}
+
 // Subtitle handler — chamado quando o Stremio pede legendas para um filme/série
 // config = { username, password } quando o utilizador configurou o addon no Stremio
 builder.defineSubtitlesHandler(async ({ type, id, config }) => {
@@ -15,7 +23,7 @@ builder.defineSubtitlesHandler(async ({ type, id, config }) => {
 
   const [imdbId, season, episode] = id.split(':');
   const credentials = config && (config.username || config.password) ? config : null;
-  const baseUrl = (process.env.BASE_URL || (process.env.RAILWAY_PUBLIC_DOMAIN && `https://${process.env.RAILWAY_PUBLIC_DOMAIN}`) || '').replace(/\/$/, '');
+  const baseUrl = getBaseUrl();
 
   try {
     const subtitles = await searchSubtitles({
@@ -38,7 +46,17 @@ builder.defineSubtitlesHandler(async ({ type, id, config }) => {
 // Criar servidor Express com CORS correto para o Stremio
 const app = express();
 
-// CORS — obrigatório para o Stremio conseguir aceder ao addon
+// Guardar Host do pedido para construir URLs de legendas (proxy) quando BASE_URL não está definido
+app.use((req, res, next) => {
+  const host = req.get('host');
+  if (host) {
+    const protocol = req.get('x-forwarded-proto') || req.protocol || 'https';
+    inferredBaseUrl = (protocol === 'https' ? 'https' : 'http') + '://' + host;
+  }
+  next();
+});
+
+// CORS — obrigatório para o Stremio conseguir aceder ao addon (inclui o proxy de legendas)
 app.use((req, res, next) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Headers', '*');
@@ -89,6 +107,7 @@ app.get('/pipocas/:id', (req, res) => {
       credentials = JSON.parse(decodeURIComponent(c));
     } catch (_) {}
   }
+  res.setHeader('Access-Control-Allow-Origin', '*');
   downloadSubtitleById(id, res, credentials);
 });
 
