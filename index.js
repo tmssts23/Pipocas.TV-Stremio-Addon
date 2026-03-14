@@ -18,12 +18,13 @@ function getBaseUrl() {
 
 // Subtitle handler — chamado quando o Stremio pede legendas para um filme/série
 // config = { username, password } quando o utilizador configurou o addon no Stremio
-builder.defineSubtitlesHandler(async ({ type, id, config }) => {
+builder.defineSubtitlesHandler(async ({ type, id, config, extra }) => {
   console.log(`[Pipocas.tv] Subtitles requested → type=${type} id=${id}`);
 
   const [imdbId, season, episode] = id.split(':');
   const credentials = config && (config.username || config.password) ? config : null;
   const baseUrl = getBaseUrl();
+  const videoFileName = (extra && extra.filename) || null;
 
   try {
     const subtitles = await searchSubtitles({
@@ -34,6 +35,7 @@ builder.defineSubtitlesHandler(async ({ type, id, config }) => {
       credentials,
       baseUrlForProxy: baseUrl || null,
       configForUrl: credentials || null,
+      videoFileName,
     });
     console.log(`[Pipocas.tv] Encontradas ${subtitles.length} legendas`);
     return { subtitles };
@@ -117,8 +119,12 @@ app.get('/pipocas/:configOrId/:id?', (req, res) => {
     res.status(404).end('Not found');
     return;
   }
+  const options = {};
+  if (req.query.season != null) options.season = req.query.season;
+  if (req.query.episode != null) options.episode = req.query.episode;
+  if (req.query.fileIndex != null) options.fileIndex = req.query.fileIndex;
   res.setHeader('Access-Control-Allow-Origin', '*');
-  downloadSubtitleById(id, res, credentials);
+  downloadSubtitleById(id, res, credentials, options);
 });
 
 // Router do addon SDK (manifest, subtitles, etc.)
