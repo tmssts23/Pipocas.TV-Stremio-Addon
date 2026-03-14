@@ -56,16 +56,16 @@ const client = axios.create({
   httpsAgent: new https.Agent({ rejectUnauthorized: false }),
 });
 
-// Indica se o texto tem padrão de "dois episódios" (ex: E05E06, E01E02)
+// Indica se o texto tem padrão de "dois episódios" (ex: E05E06, E05.E06, E01E02)
 function releaseHasTwoEpisodes(text) {
   if (!text || typeof text !== 'string') return false;
-  return /[Ee]\d{1,2}\s*[Ee]\d{1,2}|[Ee]\d{1,2}\s*[-–]\s*[Ee]?\d{1,2}/.test(text);
+  return /[Ee]\d{1,2}[\s.\-]*[Ee]\d{1,2}|[Ee]\d{1,2}\s*[-–]\s*[Ee]?\d{1,2}/.test(text);
 }
 
 // Só mostrar legendas "dois episódios" quando o ficheiro de vídeo também indica dois episódios
 function videoMatchesTwoEpisodeRelease(videoFileName, releaseName) {
   if (!videoFileName || typeof videoFileName !== 'string') return false;
-  const m = (releaseName || '').match(/[Ee](\d{1,2})\s*[Ee](\d{1,2})/);
+  const m = (releaseName || '').match(/[Ee](\d{1,2})[\s.\-]*[Ee](\d{1,2})/);
   if (!m) return false;
   const [_, a, b] = m;
   const norm = (x, y) => `e${x.padStart(2, '0')}e${y.padStart(2, '0')}`.toLowerCase();
@@ -202,7 +202,7 @@ async function searchSubtitles({ type, imdbId, season, episode, credentials, bas
   const rawItems = await scrapePage(url, season, episode, credentials, videoFileName);
   const resolved = [];
   for (const item of rawItems) {
-    const list = await resolveEntryToSubtitles(item.subId, credentials, season, episode, item.name, item.langLabel);
+    const list = await resolveEntryToSubtitles(item.subId, credentials, season, episode, item.name, item.langLabel, videoFileName);
     resolved.push(...list);
   }
   const subtitles = resolved.map(({ subId, fileIndex, name, lang, langLabel }) => {
@@ -389,7 +389,8 @@ async function getMatchingSrtList(body, season, episode) {
 }
 
 // Descarrega um item (subId) e devolve a lista de legendas a mostrar: cada .srt que interessa (nunca "o pack").
-async function resolveEntryToSubtitles(subId, credentials, season, episode, displayName, langLabel) {
+// Ficheiros .srt cujo nome indica dois episódios (ex: E05E06) só entram se o vídeo também for dois episódios.
+async function resolveEntryToSubtitles(subId, credentials, season, episode, displayName, langLabel, videoFileName) {
   const session = getSession(credentials);
   if (!session.loggedIn) await login(credentials);
   const url = `${BASE_URL}/legendas/download/${subId}`;
@@ -407,7 +408,7 @@ async function resolveEntryToSubtitles(subId, credentials, season, episode, disp
     if (type === 'single') {
       return [{ subId, fileIndex: null, fileName: null, name: displayName, lang: 'por', langLabel }];
     }
-    return entries.map(({ fileIndex, fileName }) => ({
+    let list = entries.map(({ fileIndex, fileName }) => ({
       subId,
       fileIndex,
       fileName: fileName || '',
@@ -415,6 +416,26 @@ async function resolveEntryToSubtitles(subId, credentials, season, episode, disp
       lang: 'por',
       langLabel,
     }));
+    if (season != null && episode != null && videoFileName != null) {
+      list = list.filter((entry) => {
+        const fn = entry.fileName || '';
+        if (!releaseHasTwoEpisodes(fn)) return true;
+        const ok = videoMatchesTwoEpisodeRelease(videoFileName, fn);
+        if (!ok) console.log(`[Pipocas.tv] Excluída legenda dois episódios (vídeo não é E05E06): ${fn}`);
+        return ok;
+      });
+    } else if (season != null && episode != null) {
+      list = list.filter((entry) => {
+        const fn = entry.fileName || '';
+        if (!releaseHasTwoEpisodes(fn)) return true;
+        console.log(`[Pipocas.tv] Excluída legenda dois episódios (vídeo é só um ep.): ${fn}`);
+        return false;
+      });
+    }
+    if (entries.length > 0 && list.length === 0) {
+      console.log(`[Pipocas.tv] Pack ${subId}: 0 .srt para S${season}E${episode} (após filtros)`);
+    }
+    return list;
   } catch (err) {
     console.error(`[Pipocas.tv] Erro ao analisar ${subId}:`, err.message);
     return [];
