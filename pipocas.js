@@ -234,44 +234,75 @@ async function searchSubtitles({ type, imdbId, season, episode, credentials, bas
   return subtitles;
 }
 
+const MAX_PAGES = 50;
+
+function getNextPageUrl($, currentUrl) {
+  const base = BASE_URL.replace(/\/$/, '');
+  let href = null;
+  $('a').each((i, el) => {
+    const $a = $(el);
+    const t = $a.text().trim();
+    if (/seguinte|next/i.test(t)) href = $a.attr('href');
+  });
+  if (!href) {
+    $('a[href*="page="]').each((i, el) => {
+      const $a = $(el);
+      const t = $a.text().trim();
+      if (/seguinte|next|>\s*$/i.test(t)) href = href || $a.attr('href');
+    });
+  }
+  if (!href) return null;
+  if (href.startsWith('http')) return href;
+  if (href.startsWith('/')) return base + href;
+  try {
+    const u = new URL(currentUrl);
+    return new URL(href, u.origin + u.pathname).href;
+  } catch (_) {
+    return base + (href.startsWith('/') ? href : '/' + href);
+  }
+}
+
 async function scrapePage(url, season, episode, credentials, videoFileName) {
   const subtitles = [];
+  const seenIds = new Set();
   const session = getSession(credentials);
+  let currentUrl = url;
+  let pageNum = 1;
 
   try {
-    console.log(`[Pipocas.tv] A pesquisar: ${url}`);
+    while (currentUrl && pageNum <= MAX_PAGES) {
+      console.log(`[Pipocas.tv] A pesquisar (pág. ${pageNum}): ${currentUrl}`);
 
-    const response = await client.get(url, {
-      headers: { ...HEADERS, 'Cookie': getCookieHeader(session) },
-    });
+      const response = await client.get(currentUrl, {
+        headers: { ...HEADERS, 'Cookie': getCookieHeader(session) },
+      });
 
-    saveCookies(response.headers, session);
+      saveCookies(response.headers, session);
 
-    const html = typeof response.data === 'string' ? response.data : (response.data && response.data.toString ? response.data.toString() : '');
-    const isLoginPage = response.headers['location']?.includes('/login') || html.includes('<title>Login');
-    const occurrences = (html.match(/\/legendas\/download\//g) || []).length;
+      const html = typeof response.data === 'string' ? response.data : (response.data && response.data.toString ? response.data.toString() : '');
+      const isLoginPage = response.headers['location']?.includes('/login') || html.includes('<title>Login');
+      const occurrences = (html.match(/\/legendas\/download\//g) || []).length;
 
-    if (occurrences > 0) {
-      console.log(`[Pipocas.tv] Links de download encontrados no HTML: ${occurrences}`);
-    } else if (isLoginPage) {
-      session.loggedIn = false;
-      const ok = await login(credentials);
-      if (!ok) {
-        console.warn('[Pipocas.tv] ⚠️  Página exige login e as credenciais falharam. Tenta configurar no Stremio.');
-        return subtitles;
+      if (occurrences > 0) {
+        console.log(`[Pipocas.tv] Links de download nesta página: ${occurrences}`);
+      } else if (isLoginPage) {
+        session.loggedIn = false;
+        const ok = await login(credentials);
+        if (!ok) {
+          console.warn('[Pipocas.tv] ⚠️  Página exige login e as credenciais falharam. Tenta configurar no Stremio.');
+          break;
+        }
+        continue;
       }
-      return scrapePage(url, season, episode, credentials, videoFileName);
-    } else {
-      console.log(`[Pipocas.tv] Nenhum link de download na página (${occurrences}).`);
-    }
 
-    const $ = cheerio.load(html);
+      const $ = cheerio.load(html);
 
-    $('a[href*="/legendas/download/"]').each((i, el) => {
+      $('a[href*="/legendas/download/"]').each((i, el) => {
       const $link = $(el);
       const href = $link.attr('href');
       const subId = href.match(/\/legendas\/download\/(\d+)/)?.[1];
-      if (!subId) return;
+      if (!subId || seenIds.has(subId)) return;
+      seenIds.add(subId);
 
       const $block = $link.closest('.col-md-12').parent();
 
@@ -339,10 +370,14 @@ async function scrapePage(url, season, episode, credentials, videoFileName) {
       });
     });
 
+      currentUrl = getNextPageUrl($, currentUrl);
+      pageNum++;
+    }
   } catch (err) {
     console.error(`[Pipocas.tv] Erro:`, err.message);
   }
 
+  console.log(`[Pipocas.tv] Total de entradas (todas as páginas): ${subtitles.length}`);
   return subtitles;
 }
 
