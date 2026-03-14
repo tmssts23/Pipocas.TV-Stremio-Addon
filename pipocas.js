@@ -362,7 +362,7 @@ async function getMatchingSrtList(body, season, episode) {
   const getName = (e, isZip) => (isZip ? (e.entryName || '') : (e.name || '')).replace(/^.*[/\\]/, '');
   const filter = (list, isZip) => {
     let srtList = list.filter((e) => (isZip ? !e.isDirectory : !e.flags.directory) && (isZip ? (e.entryName || '') : (e.name || '')).toLowerCase().endsWith('.srt'));
-    if (season != null && episode != null && srtList.length > 1) {
+    if (season != null && episode != null) {
       srtList = srtList.filter((e) => filenameMatchesEpisode(getName(e, isZip), season, episode));
     }
     return srtList.sort((a, b) => getName(a, isZip).localeCompare(getName(b, isZip)));
