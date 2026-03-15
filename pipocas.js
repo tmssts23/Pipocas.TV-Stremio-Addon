@@ -508,8 +508,28 @@ async function resolveEntryToSubtitles(subId, credentials, season, episode, disp
   }
 }
 
+function looksLikeHtml(buffer) {
+  if (!buffer || buffer.length < 20) return false;
+  const start = buffer.slice(0, 200).toString('utf8').replace(/\0/g, '');
+  return /^\s*<\!?DOCTYPE|^\s*<html\b/i.test(start);
+}
+
 async function downloadSubtitleById(id, res, credentials, options = {}) {
   const { season, episode, fileIndex } = options;
+  const sendError = (code, msg) => {
+    res.statusCode = code;
+    res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.end(msg);
+  };
+
+  if (!credentials || (!credentials.username && !credentials.password)) {
+    console.error(`[Pipocas.tv] Pedido de legenda ${id} sem credenciais (proxy deve receber config no path ou ?c=).`);
+    sendError(401, 'Credenciais em falta. Configura o addon no Stremio.');
+    return;
+  }
+
+  console.log(`[Pipocas.tv] Pedido de download legenda id=${id} (S${season || '?'}E${episode || '?'}, fileIndex=${fileIndex ?? '?'})`);
   const session = getSession(credentials);
   if (!session.loggedIn) await login(credentials);
   const url = `${BASE_URL}/legendas/download/${id}`;
@@ -519,12 +539,18 @@ async function downloadSubtitleById(id, res, credentials, options = {}) {
       headers: { ...HEADERS, 'Cookie': getCookieHeader(session) },
     });
     const body = Buffer.from(response.data);
+
+    if (looksLikeHtml(body)) {
+      console.error(`[Pipocas.tv] Resposta do Pipocas para ${id} é HTML (login exigido ou sessão expirada).`);
+      sendError(502, 'Sessão expirada ou login falhou. Reconfigura o addon no Stremio.');
+      return;
+    }
+
     const idx = fileIndex != null ? Number(fileIndex) : 0;
     const { type, entries } = await getMatchingSrtList(body, season, episode);
 
     if (entries.length === 0) {
-      res.statusCode = 404;
-      res.end('Nenhum .srt encontrado para este episódio');
+      sendError(404, 'Nenhum .srt encontrado para este episódio.');
       return;
     }
     const chosen = entries[idx] != null ? entries[idx] : entries[0];
@@ -540,18 +566,23 @@ async function downloadSubtitleById(id, res, credentials, options = {}) {
       const first = files.find((f) => f.extraction);
       if (first && first.extraction) out = Buffer.from(first.extraction);
       else {
-        res.statusCode = 502;
-        res.end('Erro ao extrair do RAR');
+        console.error(`[Pipocas.tv] Falha ao extrair do RAR: ${nameToExtract}`);
+        sendError(502, 'Erro ao extrair do RAR.');
         return;
       }
+    } else if (type === 'single' && looksLikeHtml(body)) {
+      sendError(502, 'Resposta inválida do servidor.');
+      return;
     }
 
     res.setHeader('Content-Type', 'application/x-subrip; charset=utf-8');
+    res.setHeader('Content-Disposition', 'attachment; filename="subtitle.srt"');
+    res.setHeader('Access-Control-Allow-Origin', '*');
     res.end(out);
+    console.log(`[Pipocas.tv] Legenda ${id} enviada com sucesso (${out.length} bytes)`);
   } catch (err) {
     console.error(`[Pipocas.tv] Erro ao descarregar legenda ${id}:`, err.message);
-    res.statusCode = 502;
-    res.end('Erro ao obter legenda');
+    sendError(502, 'Erro ao obter legenda.');
   }
 }
 

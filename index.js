@@ -122,6 +122,7 @@ app.get('/pipocas/:configOrId/:id?', (req, res) => {
   }
   const id = parseInt(idStr, 10);
   if (!id || id <= 0) {
+    res.setHeader('Access-Control-Allow-Origin', '*');
     res.status(404).end('Not found');
     return;
   }
