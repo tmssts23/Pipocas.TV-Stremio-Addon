@@ -40,10 +40,10 @@ function getCookieHeader(session) {
   return Object.entries(session.cookieJar).map(([k, v]) => `${k}=${v}`).join('; ');
 }
 
-// Pedidos ao Pipocas.tv: não incluir cabeçalhos com dados de utilizadores ou localização.
-// O servidor do addon não envia IP do cliente nem identificadores de rastreio.
+// Pedidos ao Pipocas.tv: User-Agent Edge para evitar bloqueios (Chrome pode tratar como imitação).
+// Não incluir cabeçalhos com dados de utilizadores ou localização.
 const HEADERS = {
-  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 Edg/120.0.0.0',
   'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
   'Accept-Language': 'pt-PT,pt;q=0.9,en;q=0.8',
   'Referer': 'https://pipocas.tv/',
@@ -52,7 +52,7 @@ const HEADERS = {
 const client = axios.create({
   baseURL: BASE_URL,
   headers: HEADERS,
-  timeout: 20000,
+  timeout: 35000,
   maxRedirects: 0,        // NÃO seguir redirects automaticamente — controlamos manualmente
   validateStatus: (s) => s < 500,  // aceitar 3xx sem lançar erro
   httpsAgent: new https.Agent({ rejectUnauthorized: false }),
@@ -199,7 +199,10 @@ async function login(credentials) {
 
 async function searchSubtitles({ type, imdbId, season, episode, credentials, baseUrlForProxy, configForUrl, videoFileName }) {
   const session = getSession(credentials);
-  if (!session.loggedIn) await login(credentials);
+  // Sempre fazer login quando há credenciais: sessão fresca evita timeouts e bloqueios.
+  if (credentials && (credentials.username || credentials.password)) {
+    await login(credentials);
+  }
 
   const imdbNumeric = imdbId.replace(/^tt/i, '');
   const url = `${BASE_URL}/legendas?t=imdb&s=${imdbNumeric}&l=todas`;
