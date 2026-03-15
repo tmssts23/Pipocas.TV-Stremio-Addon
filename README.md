@@ -9,7 +9,7 @@ Addon para o **Stremio** que procura e disponibiliza legendas em **Português (P
 - 🔍 Pesquisa automática de legendas por IMDB ID
 - 🎬 Suporte para **filmes** e **séries**
 - 🇵🇹 Legendas em **Português Europeu** e **Português do Brasil**
-- 🔐 Login automático com conta Pipocas.tv
+- 🔐 Cada utilizador configura as suas credenciais Pipocas.tv na definição do addon no Stremio (não são guardadas no servidor do addon)
 
 ---
 
@@ -18,7 +18,16 @@ Addon para o **Stremio** que procura e disponibiliza legendas em **Português (P
 - [Node.js](https://nodejs.org/) v14 ou superior
 - Conta registada em [Pipocas.tv](https://pipocas.tv)
 
-> **Nota:** O Pipocas.tv requer conta registada para efetuar downloads de legendas.
+> **Nota:** O Pipocas.tv requer conta registada para efetuar downloads de legendas. As credenciais são introduzidas **no Stremio**, ao configurar o addon; são usadas apenas para autenticação no site Pipocas.tv.
+
+---
+
+## 🔒 Segurança e privacidade
+
+- **Credenciais:** Só as que o utilizador introduz na configuração do addon no Stremio. O addon não usa ficheiros `.env` nem credenciais por defeito.
+- **Uso:** As credenciais são enviadas apenas ao domínio **pipocas.tv** para iniciar sessão e descarregar legendas em nome do utilizador.
+- **Localização e rastreio:** O addon não regista nem expõe IPs de utilizadores, nem envia cabeçalhos que identifiquem o cliente. Os logs não incluem endereços IP nem dados que permitam rastrear quem usa o addon.
+- Recomenda-se utilizar uma palavra-passe específica para o Pipocas.tv e não reutilizar noutros serviços.
 
 ---
 
@@ -37,26 +46,12 @@ cd stremio-pipocas-addon
 npm install
 ```
 
-### 3. Configura as credenciais
+### 3. (Opcional) Variáveis de ambiente
 
-Copia o ficheiro de exemplo e preenche as tuas credenciais:
-
-```bash
-cp .env.example .env
-```
-
-Edita o ficheiro `.env`:
+Para desenvolvimento local, podes definir no `.env` apenas a porta (as credenciais configuram-se no Stremio):
 
 ```env
-PIPOCAS_USER=o_teu_username
-PIPOCAS_PASS=a_tua_password
 PORT=7000
-```
-
-Opcionalmente, podes adicionar uma chave da API [OMDB](https://www.omdbapi.com/apikey.aspx) (gratuita) para melhorar a pesquisa por título:
-
-```env
-OMDB_API_KEY=a_tua_chave_omdb
 ```
 
 ### 4. Inicia o addon
@@ -79,8 +74,9 @@ Verás uma mensagem como:
 1. Abre o **Stremio**
 2. Vai a **⚙️ Definições → Addons**
 3. Clica em **"+ Add addon"**
-4. Cola o URL: `http://127.0.0.1:7000/manifest.json`
+4. Cola o URL: `http://127.0.0.1:7000/manifest.json` (ou o URL público do addon)
 5. Confirma a instalação
+6. **Configura o addon:** abre as opções do addon e introduce o teu **utilizador** e **palavra-passe** do Pipocas.tv (obrigatório para ver legendas)
 
 Ou abre diretamente no browser:
 ```

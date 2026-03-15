@@ -19,12 +19,16 @@ function getBaseUrl() {
 // Subtitle handler — chamado quando o Stremio pede legendas para um filme/série
 // config = { username, password } quando o utilizador configurou o addon no Stremio
 builder.defineSubtitlesHandler(async ({ type, id, config, extra }) => {
-  console.log(`[Pipocas.tv] Subtitles requested → type=${type} id=${id}`);
+  // Log sem dados de utilizador (sem IP, sem identificadores de cliente)
+  console.log(`[Pipocas.tv] Pedido de legendas → type=${type} id=${id}`);
 
   const [imdbId, season, episode] = id.split(':');
   const credentials = config && (config.username || config.password) ? config : null;
   const baseUrl = getBaseUrl();
   const videoFileName = (extra && extra.filename) || null;
+  if (!credentials) {
+    console.log('[Pipocas.tv] Sem credenciais — configura o addon no Stremio com o teu utilizador e palavra-passe do Pipocas.tv.');
+  }
 
   try {
     const subtitles = await searchSubtitles({
@@ -48,7 +52,9 @@ builder.defineSubtitlesHandler(async ({ type, id, config, extra }) => {
 // Criar servidor Express com CORS correto para o Stremio
 const app = express();
 
-// Guardar Host do pedido para construir URLs de legendas (proxy) quando BASE_URL não está definido
+// Segurança/privacidade: nunca registar nem reenviar IP do cliente, X-Forwarded-For ou outros
+// dados que permitam identificar ou rastrear utilizadores. O Host é usado só para construir
+// URLs do proxy de legendas e não é guardado em log.
 app.use((req, res, next) => {
   const host = req.get('host');
   if (host) {

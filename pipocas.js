@@ -40,6 +40,8 @@ function getCookieHeader(session) {
   return Object.entries(session.cookieJar).map(([k, v]) => `${k}=${v}`).join('; ');
 }
 
+// Pedidos ao Pipocas.tv: não incluir cabeçalhos com dados de utilizadores ou localização.
+// O servidor do addon não envia IP do cliente nem identificadores de rastreio.
 const HEADERS = {
   'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
   'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
@@ -75,7 +77,7 @@ function videoMatchesTwoEpisodeRelease(videoFileName, releaseName) {
   return v.includes(pattern) || v.includes(alt) || v.includes(`e${a}e${b}`);
 }
 
-// Verifica se o nome do ficheiro (.srt) corresponde ao episódio pedido (ex: S01E05, 1x05)
+// Verifica se o nome do ficheiro (.srt) corresponde ao episódio pedido (ex: S01E05, 1x05, Ep05, 05.pt)
 function filenameMatchesEpisode(filename, season, episode) {
   if (!filename || season == null || episode == null) return false;
   const s = String(season);
@@ -87,32 +89,35 @@ function filenameMatchesEpisode(filename, season, episode) {
     `[Ss]\\s*${s}\\s*[Ee]\\s*${e}\\b|` +
     `[Ss]\\s*${s2}\\s*[Ee]\\s*${e2}\\b|` +
     `[Ss]\\s*${s2}\\s*[Ee]\\s*${e}\\b|` +
-    `[Ss]\\s*${s2}\\s*[Ee]\\s*${e2}(?=[Ee]\\d|\\D|$)|` + // S01E05 em S01E05E06
+    `[Ss]\\s*${s2}\\s*[Ee]\\s*${e2}(?=[Ee]\\d|\\D|$)|` +
     `\\b${s}\\s*[xX]\\s*${e}\\b|` +
     `\\b${s}\\s*[xX]\\s*${e2}\\b|` +
     `[Ee]p?\\.?\\s*${e}\\b|` +
-    `episodio\\s*${e}|` +
-    `episode\\s*${e}`,
+    `[Ee]p\\s*${e2}\\b|` +
+    `episodio\\s*${e}\\b|` +
+    `episode\\s*${e}\\b|` +
+    `[._-]${e2}[._-]|` +
+    `[._-]${e}\\b|` +
+    `\\b${e2}[._-]|\\.${e2}\\.`,
     'i'
   );
   return re.test(n) || re.test(filename);
 }
 
+// Credenciais: apenas as que o utilizador introduz na configuração do addon no Stremio.
+// Nunca usar .env ou valores por defeito — cada utilizador usa as suas. Nunca registar palavras-passe.
 async function login(credentials) {
   const creds = credentials || {};
-  const username = creds.username || process.env.PIPOCAS_USER;
-  const password = creds.password || process.env.PIPOCAS_PASS;
+  const username = creds.username;
+  const password = creds.password;
   const session = getSession(credentials);
 
   if (!username || !password) {
-    if (!credentials) {
-      console.warn('[Pipocas.tv] ⚠️  Sem credenciais! Configura no Stremio ou define PIPOCAS_USER e PIPOCAS_PASS no .env');
-    }
     return false;
   }
 
   try {
-    console.log('[Pipocas.tv] A fazer login...');
+    console.log('[Pipocas.tv] A fazer login (conta configurada no Stremio)...');
 
     const homeRes = await client.get('/', { headers: HEADERS });
     saveCookies(homeRes.headers, session);
@@ -271,7 +276,8 @@ async function scrapePage(url, season, episode, credentials, videoFileName) {
 
   try {
     while (currentUrl && pageNum <= MAX_PAGES) {
-      console.log(`[Pipocas.tv] A pesquisar (pág. ${pageNum}): ${currentUrl}`);
+      // Não registar URL completa em produção para evitar expor parâmetros; apenas página
+    console.log(`[Pipocas.tv] A pesquisar (pág. ${pageNum})…`);
 
       const response = await client.get(currentUrl, {
         headers: { ...HEADERS, 'Cookie': getCookieHeader(session) },
@@ -288,10 +294,14 @@ async function scrapePage(url, season, episode, credentials, videoFileName) {
       } else if (isLoginPage) {
         session.loggedIn = false;
         const ok = await login(credentials);
-        if (!ok) {
-          console.warn('[Pipocas.tv] ⚠️  Página exige login e as credenciais falharam. Tenta configurar no Stremio.');
-          break;
+    if (!ok) {
+        if (!credentials || !credentials.username) {
+          console.log('[Pipocas.tv] Página exige login. Configura o addon no Stremio com as tuas credenciais Pipocas.tv.');
+        } else {
+          console.warn('[Pipocas.tv] Login falhou. Verifica utilizador e palavra-passe nas definições do addon.');
         }
+        break;
+      }
         continue;
       }
 
@@ -397,7 +407,7 @@ async function getMatchingSrtList(body, season, episode) {
   const getName = (e, isZip) => (isZip ? (e.entryName || '') : (e.name || '')).replace(/^.*[/\\]/, '');
   const filter = (list, isZip) => {
     let srtList = list.filter((e) => (isZip ? !e.isDirectory : !e.flags.directory) && (isZip ? (e.entryName || '') : (e.name || '')).toLowerCase().endsWith('.srt'));
-    if (season != null && episode != null) {
+    if (season != null && episode != null && srtList.length > 1) {
       srtList = srtList.filter((e) => filenameMatchesEpisode(getName(e, isZip), season, episode));
     }
     return srtList.sort((a, b) => getName(a, isZip).localeCompare(getName(b, isZip)));
@@ -523,7 +533,5 @@ async function downloadSubtitleById(id, res, credentials, options = {}) {
     res.end('Erro ao obter legenda');
   }
 }
-
-login().catch(() => {});
 
 module.exports = { searchSubtitles, login, downloadSubtitleById };

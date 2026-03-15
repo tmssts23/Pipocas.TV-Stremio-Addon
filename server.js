@@ -17,7 +17,7 @@ function getLocalIP() {
 }
 
 // Um único servidor (addon + proxy na mesma porta) a escutar em 0.0.0.0 para funcionar na mesma máquina e noutra máquina / LAN
-// BASE_URL: se não definido, usamos o IP da LAN para os URLs das legendas
+// BASE_URL: se não definido, usamos o IP da LAN para os URLs das legendas (não é mostrado em log por privacidade)
 const BASE_URL = process.env.BASE_URL || ('http://' + getLocalIP() + ':' + ADDON_PORT);
 process.env.BASE_URL = BASE_URL.replace(/\/$/, '');
 
@@ -77,11 +77,10 @@ app.get(/^\/pipocas\/(\d+)(\.srt)?\/?$/i, (req, res) => proxyHandler(req, res));
 app.use(getRouter(addonInterface));
 
 app.listen(ADDON_PORT, '0.0.0.0', () => {
-  const localIP = getLocalIP();
   console.log('');
   console.log('=== Addon Pipocas.TV Legendas ===');
   console.log('  Mesma máquina:  http://localhost:' + ADDON_PORT + '/manifest.json');
-  console.log('  Outra máquina:  http://' + localIP + ':' + ADDON_PORT + '/manifest.json');
+  console.log('  Outra máquina:  http://<IP-desta-máquina>:' + ADDON_PORT + '/manifest.json');
   console.log('  No Stremio (TV/telemóvel): adiciona o URL da outra máquina.');
   console.log('  Configura utilizador e palavra-passe Pipocas na primeira vez.');
   console.log('  Se outra máquina não ligar: permite a porta ' + ADDON_PORT + ' no Firewall do Windows.');
