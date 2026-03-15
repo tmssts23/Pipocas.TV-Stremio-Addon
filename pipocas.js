@@ -218,13 +218,12 @@ async function searchSubtitles({ type, imdbId, season, episode, credentials, bas
       if (season != null) params.set('season', String(season));
       if (episode != null) params.set('episode', String(episode));
       if (fileIndex != null) params.set('fileIndex', String(fileIndex));
-      const query = params.toString() ? `?${params}` : '';
       if (configForUrl) {
         const configEnc = Buffer.from(JSON.stringify(configForUrl), 'utf8').toString('base64url');
-        subtitleUrl = `${base}/pipocas/${configEnc}/${subId}.srt${query}`;
-      } else {
-        subtitleUrl = `${base}/pipocas/${subId}.srt${query}`;
+        params.set('c', configEnc);
       }
+      const query = params.toString() ? `?${params}` : '';
+      subtitleUrl = `${base}/pipocas/${subId}.srt${query}`;
     } else {
       subtitleUrl = `${BASE_URL}/legendas/download/${subId}`;
     }
@@ -541,7 +540,7 @@ async function downloadSubtitleById(id, res, credentials, options = {}) {
     const body = Buffer.from(response.data);
 
     if (looksLikeHtml(body)) {
-      console.error(`[Pipocas.tv] Resposta do Pipocas para ${id} é HTML (login exigido ou sessão expirada).`);
+      console.error(`[Pipocas.tv] Pack id=${id}: resposta do Pipocas é HTML (login exigido ou sessão expirada). Não foi possível descompactar nem listar legendas do pack.`);
       sendError(502, 'Sessão expirada ou login falhou. Reconfigura o addon no Stremio.');
       return;
     }

@@ -100,23 +100,17 @@ app.get('/configure', (_, res) => {
   res.setHeader('Content-Type', 'text/html').end(landingHTML);
 });
 
-// Proxy de download de legendas. Suporta:
-// - /pipocas/229095.srt (sem credenciais; usa query ?c= se existir)
-// - /pipocas/BASE64CONFIG/229095.srt (credenciais no path; Stremio costuma não enviar query)
-app.get('/pipocas/:configOrId/:id?', (req, res) => {
-  let idStr, credentials = null;
-  if (req.params.id != null) {
-    const configStr = req.params.configOrId;
-    idStr = (req.params.id || '').replace(/\.srt$/i, '');
+// Proxy de download: /pipocas/228879.srt?season=5&episode=1&fileIndex=0&c=BASE64URL (credenciais em ?c= para evitar / no path e bloqueio Chrome)
+app.get('/pipocas/:id', (req, res) => {
+  const idStr = (req.params.id || '').replace(/\.srt$/i, '');
+  let credentials = null;
+  const c = req.query.c;
+  if (c) {
     try {
-      credentials = JSON.parse(Buffer.from(configStr, 'base64url').toString('utf8'));
-    } catch (_) {}
-  } else {
-    idStr = (req.params.configOrId || '').replace(/\.srt$/i, '');
-    const c = req.query.c;
-    if (c) {
+      credentials = JSON.parse(Buffer.from(String(c), 'base64url').toString('utf8'));
+    } catch (_) {
       try {
-        credentials = JSON.parse(decodeURIComponent(c));
+        credentials = JSON.parse(decodeURIComponent(String(c)));
       } catch (_) {}
     }
   }

@@ -30,17 +30,25 @@ function proxyHandler(req, res) {
   }
   const id = parseInt(match[1], 10);
   let credentials = null;
+  const options = {};
   const q = (req.url || '').indexOf('?');
   if (q !== -1) {
     const params = new URLSearchParams(req.url.slice(q));
     const c = params.get('c');
     if (c) {
       try {
-        credentials = JSON.parse(decodeURIComponent(c));
-      } catch (_) {}
+        credentials = JSON.parse(Buffer.from(String(c), 'base64url').toString('utf8'));
+      } catch (_) {
+        try {
+          credentials = JSON.parse(decodeURIComponent(String(c)));
+        } catch (_) {}
+      }
     }
+    if (params.get('season') != null) options.season = params.get('season');
+    if (params.get('episode') != null) options.episode = params.get('episode');
+    if (params.get('fileIndex') != null) options.fileIndex = params.get('fileIndex');
   }
-  downloadSubtitleById(id, res, credentials);
+  downloadSubtitleById(id, res, credentials, options);
 }
 
 const app = express();
