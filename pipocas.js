@@ -530,12 +530,29 @@ async function downloadSubtitleById(id, res, credentials, options = {}) {
 
   console.log(`[Pipocas.tv] Pedido de download legenda id=${id} (S${season || '?'}E${episode || '?'}, fileIndex=${fileIndex ?? '?'})`);
   const session = getSession(credentials);
-  if (!session.loggedIn) await login(credentials);
+  if (!session.loggedIn) {
+    const ok = await login(credentials);
+    if (!ok) {
+      console.error(`[Pipocas.tv] Download ${id}: login falhou.`);
+      sendError(401, 'Login Pipocas falhou. Verifica utilizador e palavra-passe na configuração.');
+      return;
+    }
+  }
   const url = `${BASE_URL}/legendas/download/${id}`;
+  const cookieHeader = getCookieHeader(session);
+  if (!cookieHeader) {
+    console.error(`[Pipocas.tv] Download ${id}: sem cookies de sessão após login.`);
+    sendError(502, 'Sessão inválida. Reconfigura o addon no Stremio.');
+    return;
+  }
   try {
     const response = await client.get(url, {
       responseType: 'arraybuffer',
-      headers: { ...HEADERS, 'Cookie': getCookieHeader(session) },
+      headers: {
+        ...HEADERS,
+        'Cookie': cookieHeader,
+        'Referer': `${BASE_URL}/legendas`,
+      },
     });
     const body = Buffer.from(response.data);
 

@@ -114,6 +114,7 @@ app.get('/pipocas/:id', (req, res) => {
       } catch (_) {}
     }
   }
+  console.log(`[Pipocas.tv] Proxy download id=${idStr} — credenciais no pedido: ${credentials ? 'sim' : 'não'}`);
   const id = parseInt(idStr, 10);
   if (!id || id <= 0) {
     res.setHeader('Access-Control-Allow-Origin', '*');

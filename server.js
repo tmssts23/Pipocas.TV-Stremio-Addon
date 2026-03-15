@@ -48,6 +48,7 @@ function proxyHandler(req, res) {
     if (params.get('episode') != null) options.episode = params.get('episode');
     if (params.get('fileIndex') != null) options.fileIndex = params.get('fileIndex');
   }
+  console.log('[Pipocas.tv] Proxy download id=' + id + ' — credenciais no pedido: ' + (credentials ? 'sim' : 'não'));
   downloadSubtitleById(id, res, credentials, options);
 }
 
