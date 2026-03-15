@@ -401,33 +401,54 @@ function pickSrtFromPack(srtEntries, season, episode, isZip) {
 }
 
 // De um buffer (ZIP/RAR ou ficheiro único) obtém a lista de .srt que interessam para o episódio.
-// Retorna { type: 'single' | 'zip' | 'rar', entries: [{ fileIndex, fileName, entry? }] }.
-// entry só existe para ZIP (para depois getData()). Para RAR só temos fileName.
-async function getMatchingSrtList(body, season, episode) {
+// logContext = { subId } para registrar no log todas as legendas do pack e a(s) selecionada(s).
+async function getMatchingSrtList(body, season, episode, logContext) {
   const getName = (e, isZip) => (isZip ? (e.entryName || '') : (e.name || '')).replace(/^.*[/\\]/, '');
-  const filter = (list, isZip) => {
-    let srtList = list.filter((e) => (isZip ? !e.isDirectory : !e.flags.directory) && (isZip ? (e.entryName || '') : (e.name || '')).toLowerCase().endsWith('.srt'));
-    if (season != null && episode != null && srtList.length > 1) {
-      srtList = srtList.filter((e) => filenameMatchesEpisode(getName(e, isZip), season, episode));
+  const getAllSrt = (list, isZip) =>
+    list
+      .filter((e) => (isZip ? !e.isDirectory : !e.flags.directory) && (isZip ? (e.entryName || '') : (e.name || '')).toLowerCase().endsWith('.srt'))
+      .sort((a, b) => getName(a, isZip).localeCompare(getName(b, isZip)));
+  const filterByEpisode = (srtList, isZip) => {
+    if (season == null || episode == null || srtList.length <= 1) return srtList;
+    return srtList.filter((e) => filenameMatchesEpisode(getName(e, isZip), season, episode));
+  };
+
+  const logPack = (allNames, selectedNames, isZip) => {
+    if (!logContext || !logContext.subId) return;
+    console.log(`[Pipocas.tv] Pack id=${logContext.subId}: descompactado, ${allNames.length} legenda(s) no pack:`);
+    allNames.forEach((name, i) => console.log(`[Pipocas.tv]    ${i + 1}. ${name}`));
+    if (season != null && episode != null) {
+      if (selectedNames.length > 0) {
+        console.log(`[Pipocas.tv]  Selecionada(s) para S${season}E${episode}: ${selectedNames.join(', ')}`);
+      } else {
+        console.log(`[Pipocas.tv]  Nenhuma corresponde ao episódio S${season}E${episode}.`);
+      }
     }
-    return srtList.sort((a, b) => getName(a, isZip).localeCompare(getName(b, isZip)));
   };
 
   if (body.length >= 2 && body[0] === 0x50 && body[1] === 0x4B) {
     const zip = new AdmZip(body);
-    const srtEntries = filter(zip.getEntries(), true);
+    const allSrt = getAllSrt(zip.getEntries(), true);
+    const selected = filterByEpisode(allSrt, true);
+    const allNames = allSrt.map((e) => getName(e, true));
+    const selectedNames = selected.map((e) => getName(e, true));
+    logPack(allNames, selectedNames, true);
     return {
       type: 'zip',
-      entries: srtEntries.map((entry, i) => ({ fileIndex: i, fileName: getName(entry, true), entry })),
+      entries: selected.map((entry, i) => ({ fileIndex: i, fileName: getName(entry, true), entry })),
     };
   }
   if (body.length >= 7 && body[0] === 0x52 && body[1] === 0x61 && body[2] === 0x72 && body[3] === 0x21 && body[4] === 0x1A && body[5] === 0x07) {
     const extractor = await unrar.createExtractorFromData({ data: body.buffer.slice(body.byteOffset, body.byteOffset + body.byteLength) });
     const list = extractor.getFileList();
-    const srtHeaders = filter([...list.fileHeaders], false);
+    const allSrt = getAllSrt([...list.fileHeaders], false);
+    const selected = filterByEpisode(allSrt, false);
+    const allNames = allSrt.map((e) => getName(e, false));
+    const selectedNames = selected.map((e) => getName(e, false));
+    logPack(allNames, selectedNames, false);
     return {
       type: 'rar',
-      entries: srtHeaders.map((h, i) => ({ fileIndex: i, fileName: getName(h, false), entryName: h.name })),
+      entries: selected.map((h, i) => ({ fileIndex: i, fileName: getName(h, false), entryName: h.name })),
     };
   }
   return { type: 'single', entries: [{ fileIndex: 0, fileName: null }] };
@@ -445,7 +466,7 @@ async function resolveEntryToSubtitles(subId, credentials, season, episode, disp
       headers: { ...HEADERS, 'Cookie': getCookieHeader(session) },
     });
     const body = Buffer.from(response.data);
-    const { type, entries } = await getMatchingSrtList(body, season, episode);
+    const { type, entries } = await getMatchingSrtList(body, season, episode, { subId });
 
     if (entries.length === 0) {
       return [];
